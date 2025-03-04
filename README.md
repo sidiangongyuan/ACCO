@@ -5,13 +5,15 @@
 
 ## Table of Contents
 
+- [ ] [code release](#code)
+
 - [ ] [Installation](#installation)
 
 - [ ] [Getting Started](#getting-started)
 
 - [ ] [Citation](#citation)
 
-- [ ] [Acknowledgements](#acknowledgements)
+- [x] [Acknowledgements](#acknowledgements)
 
 
 
