@@ -68,6 +68,7 @@ CUDA_HOME=/usr/local/cuda-11.1/ python opencood/pcdet_utils/setup.py build_ext -
 
 ### mmdetection install
 
+```
 mmcv == 2.0.0
 
 mmdet == 3.1.0
@@ -75,19 +76,22 @@ mmdet == 3.1.0
 mmdet3d == 1.2.0
 
 mmengine == 0.8.4
-
+```
 All of these libraries can be directly installed using pip.
 
 
 ### Compile the deformable_aggregation CUDA op
 
+```
 cd projects/mmdet3d_plugin/ops
 
 python3 setup.py develop
 
 cd ../../../
-
+```
 
 ### Download pre-trained weights (Optional)
 
+```
 wget https://download.pytorch.org/models/resnet50-19c8e357.pth -O ckpt/resnet50-19c8e357.pth
+```
