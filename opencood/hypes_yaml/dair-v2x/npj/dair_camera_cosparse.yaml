@@ -1,0 +1,285 @@
+name: dair_camera_cosparse
+data_dir: 
+root_dir: 
+validate_dir: 
+test_dir: 
+
+noise_setting:
+  add_noise: True
+  args: 
+    pos_std: 0.2
+    rot_std: 0.2
+    pos_mean: 0
+    rot_mean: 0
+
+comm_range: 100
+
+camera_params:
+  use_depth_gt: &use_depth_gt True
+
+yaml_parser: "load_lift_splat_shoot_params"
+
+train_params:
+  batch_size: &batch_size 6
+  epoches: 200
+  eval_freq: 2
+  save_freq: 5
+  max_cav: &max_cav 2
+
+
+fusion:
+  core_method: 'CameraIntermediateFusionDatasetDAIR' # LateFusionDataset, EarlyFusionDataset, IntermediateFusionDataset supported
+  args:
+    depth_max: 102.4
+    proj_first: false # useless
+    clip_pc: false
+    data_aug_conf: &data_aug_conf
+      resize_lim: [0.7, 0.8]
+      final_dim: [480,960]
+      rot_lim: [-3.6, 3.6]
+      H: 1080
+      W: 1920
+      rand_flip: False
+      bot_pct_lim: [0.0, 0.10]
+    normalize_img:
+      mean: [ 0.406, 0.456, 0.485 ]
+      std: [ 1.0, 1.0, 1.0 ]
+# preprocess-related
+preprocess:
+  # options: BasePreprocessor, VoxelPreprocessor, BevPreprocessor
+  core_method: 'SpVoxelPreprocessor'
+  args:
+    voxel_size: &voxel_size [0.4, 0.4, 4]
+    max_points_per_voxel: 32
+    max_voxel_train: 32000
+    max_voxel_test: 70000
+  # lidar range for each individual cav. Format: xyzxyz minmax
+  cav_lidar_range: &cav_lidar [-102.4, -51.2, -3, 102.4, 51.2, 1]
+
+data_augment:
+  - NAME: random_world_flip
+    ALONG_AXIS_LIST: [ 'x' ]
+
+  - NAME: random_world_rotation
+    WORLD_ROT_ANGLE: [ -0.78539816, 0.78539816 ]
+
+  - NAME: random_world_scaling
+    WORLD_SCALE_RANGE: [ 0.95, 1.05 ]
+
+# anchor box related
+postprocess:
+  core_method: 'CameraPostprocessor' # VoxelPostprocessor, BevPostprocessor supported
+  gt_range: *cav_lidar
+  dir_args: &dir_args
+    dir_offset: 0.7853
+    num_bins: 2
+  anchor_args:
+    cav_lidar_range: *cav_lidar
+    l: 4.5
+    w: 2
+    h: 1.56
+    r: &anchor_yaw [0]
+    feature_stride: 2
+    num: &achor_num 1
+  target_args:
+    pos_threshold: 0.6
+    neg_threshold: 0.45
+    score_threshold: 0.4
+  order: 'hwl' # hwl or lwh
+  max_num: 100 # maximum number of objects in a single frame. use this number to make sure different frames has the same dimension in the same batch
+  nms_thresh: 0.15
+
+# model related
+model:
+  core_method: Sparse4D
+  args:  # load
+    img_backbone:
+      depth: 50
+      num_stages: 4
+      out_indices: (0, 1, 2, 3)
+      frozen_stages: -1
+      with_cp: True  #?
+      norm_eval: False
+      style: "pytorch"
+      norm_cfg: dict(type="BN", requires_grad=True)
+      pretrained: "/mnt/sdb/public/data/yangk/pretrained/sparse4D"
+    img_neck:
+      num_outs: 4
+      start_level: 1
+      out_channels: 256
+      add_extra_convs: "on_output"
+      relu_before_extra_convs: True
+      in_channels: [ 256, 512, 1024, 2048 ]
+
+    downsample: [8,16,32]
+    num_classes: &num_classes 1
+    use_grid_mask: True
+    use_deformable_func: &use_deformable_func True
+    embed_dims: &embed_dims 256
+    num_groups: &num_groups 8
+    strides: &strides [ 4, 8, 16, 32 ]
+    num_levels: &num_levels 4
+    drop_out: &drop_out 0.1
+    num_depth_layers: &num_depth_layers 3
+    use_depth: *use_depth_gt
+
+    depth_branch:
+      embed_dims: *embed_dims
+      num_depth_layers: *num_depth_layers
+      loss_weight: 0.2
+
+    head_args:
+      use_spatial: True
+      diversity: False
+      cav_lidar_range: *cav_lidar
+      depth_module:
+        # bad performance
+        ready: False
+        input_dims: *embed_dims
+      embed_dims: *embed_dims
+      fuse_args:
+        fuse: True
+        method: 'PointEncoderV6'
+        topk: 10
+        fusion_layer: [3,4,5]
+      dir_args:
+        dir_offset: 0.7853
+        num_bins: 2
+        anchor_number: 1
+      instance_bank:
+        num_anchor: 900
+        embed_dims: *embed_dims
+        anchor: "/home/yangk/coSparse4D/coSparse4D/dair-v2x-anchor.npy"
+        num_temp_instances: 100
+        confidence_decay: 0.6
+        feat_grad: True
+        default_time_interval: 0.5
+        max_queue_length: -1
+        anchor_grad: True
+        max_time_interval: 2
+      anchor_encoder:
+        embed_dims: *embed_dims
+        vel_dims: 0
+
+      num_decoder: 6
+      num_single_frame_decoder: 1
+
+      single_frame_block: &single_frame_block
+        - deformable
+        - ffn
+        - norm
+        - refine
+      multi_frame_block: &multi_frame_block
+        - gnn
+        - norm
+        - deformable
+        - ffn
+        - norm
+        - refine
+      operation_order:
+        - *single_frame_block
+        - *multi_frame_block
+        - *multi_frame_block
+        - *multi_frame_block
+        - *multi_frame_block
+        - *multi_frame_block
+      temp_graph_model:
+        embed_dims: *embed_dims
+        num_heads: *num_groups
+        batch_first: True
+        dropout: *drop_out
+      graph_model:
+        embed_dims: *embed_dims
+        num_heads: *num_groups
+        batch_first: True
+        dropout: *drop_out
+      norm_layer:
+        normalized_shape: *embed_dims
+      ffn:
+        in_channels: *embed_dims
+        pre_norm:
+          type: "LN"
+        embed_dims: *embed_dims
+        feedforward_channels: *embed_dims
+        num_fcs: 2
+        ffn_drop: *drop_out
+        act_cfg:
+          type: "ReLU"
+          inplace: true
+
+      deformable_model:
+        embed_dims: *embed_dims
+        num_groups: *num_groups
+        num_levels: *num_levels
+        num_cams: 1
+        attn_drop: 0.15
+        use_deformable_func: *use_deformable_func
+        use_camera_embed: True
+        residual_mode: "add"
+        kps_generator:
+          embed_dims: *embed_dims
+          num_learnable_pts: 6
+          fix_scale:
+            - [ 0, 0, 0 ]
+            - [ 0.45, 0, 0 ]
+            - [ -0.45, 0, 0 ]
+            - [ 0, 0.45, 0 ]
+            - [ 0, -0.45, 0 ]
+            - [ 0, 0, 0.45 ]
+            - [ 0, 0, -0.45 ]
+      refine_layer:
+        output_dim: 8
+        embed_dims: *embed_dims
+        num_cls: *num_classes
+        refine_yaw: True
+        return_dir: &return_dir True
+
+
+
+
+loss:
+  core_method: multi_detr_dir_loss
+  args:
+    use_dir: *return_dir
+    dir_args:
+      dir_weight: 0.4
+      args: *dir_args
+      anchor_yaw: *anchor_yaw
+    sampler:
+      cls_weight: 2.0
+      box_weight: 0.20
+      reg_weights: [ 2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0]
+      cls_wise_reg_weights: None
+    focalloss:
+      use_sigmoid: True
+      gamma: 2.0
+      alpha: 0.25
+      loss_weight: 2.0
+    cls_threshold_to_reg: 0
+    reg_weight: 0.20
+    gt_cls_key: gt_labels_3d
+    gt_reg_key: gt_bboxes_3d
+    reg_weights: [ 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0]
+
+
+#    cls_weight: 1.0
+#    reg: 2.0
+#    dir_args:
+#      dir_weight: 0.2
+#      args: *dir_args
+#      anchor_yaw: *anchor_yaw
+
+
+
+optimizer:
+  core_method: AdamW
+  lr: 6e-5
+  args:
+    eps: 1e-10
+    weight_decay: 1e-4
+
+
+lr_scheduler:
+  core_method: multistep #step, multistep and Exponential support
+  gamma: 0.1
+  step_size: [30, 45]

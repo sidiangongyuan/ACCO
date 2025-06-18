@@ -1,0 +1,150 @@
+name: dair_camera_attn
+data_dir: "/mnt/sdb/public/data/yangk/dataset/dair-v2x/cooperative-vehicle-infrastructure/"
+root_dir: "/mnt/sdb/public/data/yangk/dataset/dair-v2x/cooperative-vehicle-infrastructure/train.json"
+validate_dir: "/mnt/sdb/public/data/yangk/dataset/dair-v2x/cooperative-vehicle-infrastructure/val.json"
+test_dir: "/mnt/sdb/public/data/yangk/dataset/dair-v2x/cooperative-vehicle-infrastructure/test.json"
+
+noise_setting:
+  add_noise: True
+  args: 
+    pos_std: 0.2
+    rot_std: 0.2
+    pos_mean: 0
+    rot_mean: 0
+
+comm_range: 100
+
+camera_params:
+  use_depth_gt: &use_depth_gt False
+
+yaml_parser: "load_lift_splat_shoot_params"
+
+train_params:
+  batch_size: &batch_size 2
+  epoches: 70
+  eval_freq: 2
+  save_freq: 2
+  max_cav: &max_cav 2
+  supervise_single: &supervise_single False
+
+
+fusion:
+  core_method: 'CameraIntermediateFusionDatasetDAIR' # LateFusionDataset, EarlyFusionDataset, IntermediateFusionDataset supported
+  args:
+    proj_first: false # useless
+    grid_conf: &grid_conf
+        xbound: [-102.4, 102.4, 0.4]   # Limit the range of the x direction and divide the grids
+        ybound: [-51.2, 51.2, 0.4]   # Limit the range of the y direction and divide the grids
+        zbound: [-10, 10, 20.0]   # Limit the range of the z direction and divide the grids
+        ddiscr: [2, 100, 98]
+        mode: 'LID'
+
+    clip_pc: false
+    data_aug_conf: &data_aug_conf
+      resize_lim: [0.7, 0.8]
+      final_dim: [480,960]
+      rot_lim: [-3.6, 3.6]
+      H: 1080
+      W: 1920
+      rand_flip: False
+      bot_pct_lim: [0.0, 0.10]
+    normalize_img:
+      mean: [ 0.485, 0.456, 0.406]
+      std: [ 0.229, 0.224, 0.225]
+# preprocess-related
+preprocess:
+  # options: BasePreprocessor, VoxelPreprocessor, BevPreprocessor
+  core_method: 'SpVoxelPreprocessor'
+  args:
+    voxel_size: &voxel_size [0.4, 0.4, 4]
+    max_points_per_voxel: 32
+    max_voxel_train: 32000
+    max_voxel_test: 70000
+  # lidar range for each individual cav. Format: xyzxyz minmax
+  cav_lidar_range: &cav_lidar [-102.4, -51.2, -3, 102.4, 51.2, 1]
+
+data_augment:
+  - NAME: random_world_flip
+    ALONG_AXIS_LIST: [ 'x' ]
+
+  - NAME: random_world_rotation
+    WORLD_ROT_ANGLE: [ -0.78539816, 0.78539816 ]
+
+  - NAME: random_world_scaling
+    WORLD_SCALE_RANGE: [ 0.95, 1.05 ]
+
+# anchor box related
+postprocess:
+  core_method: 'VoxelPostprocessor' # VoxelPostprocessor, BevPostprocessor supported
+  gt_range: *cav_lidar
+  anchor_args:
+    cav_lidar_range: *cav_lidar
+    l: 4.5
+    w: 2
+    h: 1.56
+    r: &anchor_yaw [0, 90]
+    feature_stride: 2
+    num: &anchor_num 2
+  target_args:
+    pos_threshold: 0.6
+    neg_threshold: 0.45
+    score_threshold: 0.2
+  order: 'hwl' # hwl or lwh
+  max_num: 150 # maximum number of objects in a single frame. use this number to make sure different frames has the same dimension in the same batch
+  nms_thresh: 0.05
+  dir_args: &dir_args
+    dir_offset: 0.7853
+    num_bins: 2
+    anchor_yaw: *anchor_yaw
+
+# model related
+model:
+  core_method: lift_splat_shoot_intermediate
+  args:
+    outC: 128
+    anchor_number: *anchor_num
+    grid_conf: *grid_conf
+    data_aug_conf: *data_aug_conf
+    dir_args: *dir_args
+    supervise_single: *supervise_single
+    use_depth_gt: False
+    depth_supervision: False
+
+    img_downsample: 8
+    img_features: 128
+
+    fusion_args:
+      core_method: attn_ms
+      args:
+        voxel_size: *voxel_size
+        downsample_rate: 1
+        att:
+          feat_dim: 256
+        in_channels: 128
+
+
+
+
+loss:
+  core_method: point_pillar_dir_depth_loss
+  args:
+    cls_weight: 1.0
+    reg: 2.0
+    dir_args:
+      dir_weight: 0.2
+      args: *dir_args
+      anchor_yaw: *anchor_yaw
+    depth_weight: 3
+
+
+optimizer:
+  core_method: Adam
+  lr: 0.0015
+  args:
+    eps: 1e-10
+    weight_decay: 1e-4
+
+lr_scheduler:
+  core_method: multistep #step, multistep and Exponential support
+  gamma: 0.1
+  step_size: [30, 45]
