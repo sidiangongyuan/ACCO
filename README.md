@@ -38,13 +38,7 @@ You can also install required packages via pip:
 ```bash
 pip install -r requirements.txt
 ```
-
-Or create a conda environment if `environment.yml` is provided:
-
-```bash
-conda env create -f environment.yml
-conda activate ACCO
-```
+However, this is likely to result in package dependency errors.
 
 ---
 
