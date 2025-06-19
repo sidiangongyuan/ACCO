@@ -84,7 +84,7 @@ If you use this work, please consider citing our paper.
 
 ## 🙏 Acknowledgements
 
-- Thanks to the authors of [OpenCOOD](https://github.com/DerrickXuNu/OpenCOOD) and [Where2comm](https://github.com/MediaBrain-SJTU/where2comm) for providing excellent codebases.
+- Thanks to the authors of [OpenCOOD](https://github.com/DerrickXuNu/OpenCOOD) 、 [Sparse4D](https://github.com/linxuewu/Sparse4D) and [Where2comm](https://github.com/MediaBrain-SJTU/where2comm) for providing excellent codebases.
 - We also appreciate the datasets provided by [DAIR-V2X](https://thudair.baai.ac.cn/index) and [OPV2V](https://mobility-lab.seas.ucla.edu/opv2v/).
 
 ---
