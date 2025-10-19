@@ -269,7 +269,7 @@ class Sparse4DHead(nn.Module):
                                         metas, c_anchor, c_instance_feature, self.fuse_method, self.multifuse
                                         , self.cls_head_1d, self.cav_lidar_range, self.layers[i], self.anchor_encoder,
                                         anchor_embed, return_cls,self.topK, step,lay_num)
-                                    anchor_embed = self.anchor_encoder(instance_feature)
+                                    # anchor_embed = self.anchor_encoder(instance_feature)
                             else:
                                 pass
                     # result prediction
